@@ -5,7 +5,7 @@ provider "helm" {
   version = ">= 1.1.1"
 
   kubernetes {
-    config_path = local.config_file_path
+    config_path = local.cluster_config
   }
 }
 provider "null" {
@@ -25,12 +25,14 @@ resource "null_resource" "ibmcloud_login" {
       REGION         = var.cluster_region
       RESOURCE_GROUP = var.resource_group_name
       APIKEY         = var.ibmcloud_api_key
+      KUBECONFIG     = local.cluster_config
     }
   }
 }
 
 locals {
   cluster_config_dir    = "${path.cwd}/.kube"
+  cluster_config        = "${local.cluster_config_dir}/config"
   cluster_type_file     = "${path.cwd}/.tmp/cluster_type.val"
   cluster_version_file  = "${path.cwd}/.tmp/cluster_version.val"
   registry_url_file     = "${path.cwd}/.tmp/registry_url.val"
@@ -129,6 +131,7 @@ resource "null_resource" "get_cluster_version" {
     environment = {
       CLUSTER_NAME = local.cluster_name
       FILE         = local.cluster_version_file
+      KUBECONFIG   = local.cluster_config
     }
   }
 }
@@ -147,7 +150,8 @@ resource "null_resource" "create_registry_namespace" {
     command = "${path.module}/scripts/create-registry-namespace.sh ${var.resource_group_name} ${var.cluster_region} ${local.registry_url_file}"
 
     environment = {
-      APIKEY = var.ibmcloud_api_key
+      APIKEY      = var.ibmcloud_api_key
+      KUBECONFIG  = local.cluster_config
     }
   }
 }
@@ -162,7 +166,7 @@ resource "null_resource" "setup_kube_config" {
   depends_on = [null_resource.create_dirs]
 
   provisioner "local-exec" {
-    command = "rm -f ${local.cluster_config_dir}/config && ln -s ${data.ibm_container_cluster_config.cluster.config_file_path} ${local.cluster_config_dir}/config"
+    command = "rm -f ${local.cluster_config} && ln -s ${data.ibm_container_cluster_config.cluster.config_file_path} ${local.cluster_config}"
   }
 
   provisioner "local-exec" {
@@ -176,6 +180,10 @@ resource "null_resource" "create_cluster_pull_secret_iks" {
 
   provisioner "local-exec" {
     command = "${path.module}/scripts/cluster-pull-secret-apply.sh ${local.cluster_name}"
+
+    environment = {
+      KUBECONFIG     = local.cluster_config
+    }
   }
 }
 
@@ -184,6 +192,10 @@ resource "null_resource" "delete_ibmcloud_chart" {
 
   provisioner "local-exec" {
     command = "${path.module}/scripts/helm3-uninstall.sh ${local.ibmcloud_release_name} ${local.config_namespace}"
+
+    environment = {
+      KUBECONFIG     = local.cluster_config
+    }
   }
 }
 
